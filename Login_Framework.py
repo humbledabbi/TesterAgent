@@ -1,10 +1,19 @@
 from openai import OpenAI
 import json
 import requests
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+api_key = os.getenv("OPEN_ROUTER_KEY")
+
+if not api_key:
+    raise ValueError("API key not found in .env file")
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key="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"
+    api_key=api_key
 )
 
 def ask_ai_to_generate_test(url, html, username, password):
@@ -34,6 +43,7 @@ DOM snippet:
     )
 
     raw_output = response.choices[0].message.content
+    print("raw output observed", raw_output)
     return json.loads(raw_output)
 
 
