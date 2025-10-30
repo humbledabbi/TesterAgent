@@ -16,42 +16,56 @@ client = OpenAI(
     api_key=api_key
 )
 
-def ask_ai_to_generate_test(url, html, username, password):
-    prompt = f"""
-You are an automation testing expert.
-You will generate Python pytest + Selenium code that tests login on {url}.
-
-Use the given HTML DOM to infer the login form fields.
-
-Credentials:
-  username: {username}
-  password: {password}
-
-Return only JSON with two keys:
-- goal: a short sentence describing what the test verifies
-- code: a complete pytest test using Selenium
-
-DOM snippet:
-```html
-{html[:6000]}
+def ask_ai_to_generate_test(url, tag_dict, username, password):
+    system_prompt = """
+You are a deterministic automation test generator.
+You ALWAYS output valid JSON with two keys: "goal" and "code".
+Never hallucinate or guess element locators.
+Use only IDs or names exactly as given in the provided DOM metadata.
+If "-" exists in IDs or names do not change it or simplify it.
+Do not assume any other pages beyond what’s shown.
+Always use pytest + Selenium + Chrome.
+Return minimal, clean, working code.
 """
+    user_prompt = f"""
+    Generate a Python pytest using Selenium that performs login on {url}.
 
+    Credentials:
+      username: {username}
+      password: {password}
+
+    Use the following DOM metadata:
+    {json.dumps(tag_dict, indent=2)}
+
+    Verification:
+    - After clicking the login button, verify that a header or visible element exists
+      that confirms successful login (for example, 'Products' in a span or h1 tag if present).
+    - If not visible in DOM, skip the assertion rather than guessing.
+
+    Return:
+    {{
+      "goal": "short one-line description",
+      "code": "complete pytest code"
+    }}
+    """
     response = client.chat.completions.create(
-        model="minimax/minimax-m2:free",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2
+        model="nvidia/nemotron-nano-9b-v2:free",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0  # ✅ fully deterministic
     )
 
     raw_output = response.choices[0].message.content
+
     try:
-        return json.loads(raw_output)
+        plan = json.loads(raw_output)
     except json.JSONDecodeError:
-        start_index = raw_output.find('{')
-        end_index = raw_output.rfind('}') + 1
-        if start_index != -1 and end_index != 0:
-            json_content = raw_output[start_index:end_index]
-            return json.loads(json_content)
-        raise
+        print("⚠️ Model returned non-JSON response, fallback to raw text.")
+        plan = {"goal": "Failed to parse JSON", "code": raw_output}
+
+    return plan
 
 if __name__ == '__main__':
     print("This module is designed to be imported, not run directly.")

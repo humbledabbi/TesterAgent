@@ -8,9 +8,47 @@ from test_executor import (
     cleanup_test_venv,
     TEST_VENV_PATH  # Import the constant for venv path
 )
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import time
 
 # --- Constants ---
 TEST_FILE_NAME = "test_login_ai.py"
+
+
+def get_rendered_html(url):
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    driver = webdriver.Chrome(options=options)
+    driver.get(url)
+    time.sleep(3)  # allow JS to render
+    html = driver.page_source
+    driver.quit()
+    return html
+
+def extract_dom_metadata(html):
+    """Extracts relevant login field info from DOM for AI context."""
+    soup = BeautifulSoup(html, "html.parser")
+    inputs = []
+    for tag in soup.find_all("input"):
+        inputs.append({
+            "id": tag.get("id"),
+            "name": tag.get("name"),
+            "placeholder": tag.get("placeholder"),
+            "type": tag.get("type")
+        })
+    buttons = []
+    for tag in soup.find_all("button"):
+        buttons.append({
+            "id": tag.get("id"),
+            "text": tag.text.strip(),
+            "type": tag.get("type")
+        })
+    return {"inputs": inputs, "buttons": buttons}
 
 
 def main():
@@ -23,10 +61,9 @@ def main():
         url = "https://www.saucedemo.com/"
         print(f"\n🔌 Fetching HTML from {url}...")
         try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            html = response.text
-        except requests.exceptions.RequestException as e:
+            html = get_rendered_html(url)
+            tag_dict = extract_dom_metadata(html)
+        except Exception as e:
             print(f"❌ Failed to fetch URL: {e}")
             # Allow finally block to handle cleanup
             return
@@ -35,7 +72,7 @@ def main():
         print("🧠 Asking AI to generate test code...")
         plan = ask_ai_to_generate_test(
             url,
-            html,
+            tag_dict,
             "standard_user",
             "secret_sauce"
         )
