@@ -128,7 +128,7 @@ def chat_with_ai(request: ChatRequest):
             password=password or "",
             user_prompt=goal,
             global_steps=global_steps,
-            max_steps=5  # You control the limit
+            max_steps=8  # You control the limit
         )
         return result_text
 
