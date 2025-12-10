@@ -32,23 +32,28 @@ def extract_test_parameters(user_text: str):
     goal = None
 
     if not all([url, username, password]):
-        # Fallback — use LLM for extraction
+        print("⚠️ Missing info → falling back to LLM extraction")
+
         response = client.chat.completions.create(
             model="nvidia/nemotron-nano-9b-v2:free",
             messages=[
-                {"role": "system", "content": "Extract website URL, username, password, and testing goal from text. Output JSON."},
+                {"role": "system", "content": "Extract website URL, username, password, and testing goal from text. Output valid JSON only."},
                 {"role": "user", "content": user_text},
             ],
         )
+
         try:
             content = response.choices[0].message.content
             print("🧠 LLM Extraction:", content)
             parsed = json.loads(content)
+
             url = url or parsed.get("url")
             username = username or parsed.get("username")
             password = password or parsed.get("password")
             goal = parsed.get("goal")
-        except Exception:
+
+        except Exception as e:
+            print("❌ LLM parse error, failing over:", e)
             goal = user_text
     else:
         goal = user_text
@@ -56,12 +61,40 @@ def extract_test_parameters(user_text: str):
     return url, username, password, goal
 
 
+def parse_steps_from_ui_prompt(ui_text: str):
+    """
+    Extract ordered steps from user UI input.
+    Supports formats:
+    1. Step
+    2) Step
+    3 - Step
+    - bullet step
+    * bullet step
+    """
+    steps = []
+    import re
+
+    numbered = re.compile(r"^\s*(\d+)[\.\-\)]\s+(.*)$")
+    bullet   = re.compile(r"^\s*[\*\-\+]\s+(.*)$")
+
+    for line in ui_text.splitlines():
+        line = line.strip()
+
+        m = numbered.match(line)
+        if m:
+            steps.append(m.group(2).strip())
+            continue
+
+        b = bullet.match(line)
+        if b:
+            steps.append(b.group(1).strip())
+            continue
+
+    return steps
+
+
 @router.post("/", response_class=PlainTextResponse)
 def chat_with_ai(request: ChatRequest):
-    """
-    Chat endpoint — accepts one natural language message, extracts info,
-    runs Selenium agent accordingly, and returns a plain text result log.
-    """
     user_text = request.user_prompt
     print(f"🧠 User said: {user_text}")
 
@@ -71,14 +104,31 @@ def chat_with_ai(request: ChatRequest):
     if not url:
         return "❌ Couldn't detect a valid URL in your message."
 
+    # 1️⃣ Try extracting steps from user input
+    global_steps = parse_steps_from_ui_prompt(user_text)
+
+    # 2️⃣ Try extracting steps from LLM-extracted goal
+    if not global_steps and goal:
+        global_steps = parse_steps_from_ui_prompt(goal)
+
+    # 3️⃣ Bail if we have no steps
+    if not global_steps:
+        return (
+            "❌ I couldn't detect any ordered steps.\n"
+            "Please provide them like:\n"
+            "1. Login\n2. Add item\n3. Verify cart"
+        )
+
+    print(f"📋 Parsed Steps: {global_steps}")
+
     try:
-        # run_agentic_test now returns a nice readable log string
         result_text = run_agentic_test(
             start_url=url,
             username=username or "",
             password=password or "",
             user_prompt=goal,
-            max_steps=4
+            global_steps=global_steps,
+            max_steps=5  # You control the limit
         )
         return result_text
 
