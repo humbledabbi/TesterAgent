@@ -7,7 +7,7 @@ from memory_db_1 import init_db, save_step_memory, get_cached_success
 import time
 
 def run_agentic_test(start_url, username, password, user_prompt=None,
-                     global_steps=None, max_steps=5):
+                     global_steps=None, max_steps=8):
 
     # Initialize DB
     init_db()
@@ -160,5 +160,5 @@ if __name__ == "__main__":
         username="standard_user",
         password="secret_sauce",
         user_prompt = None,
-        max_steps=6
+        max_steps=8
     )
