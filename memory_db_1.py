@@ -18,14 +18,15 @@ def init_db():
         summary TEXT,
         tags TEXT,
         success INTEGER,
-        created_at TEXT
+        created_at TEXT,
+        embedding TEST
     )""")
 
     conn.commit()
     conn.close()
 
 
-def save_step_memory(base_url, page_url, goal, code, summary, tags, success):
+def save_step_memory(base_url, page_url, goal, code, summary, tags, success,embedding):
     """saves each AI step in to DB"""
     if not success:
         return
@@ -33,8 +34,8 @@ def save_step_memory(base_url, page_url, goal, code, summary, tags, success):
     cur = conn.cursor()
 
     cur.execute("""
-    INSERT INTO test_memory (base_url, page_url, goal, code, summary, tags, success, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO test_memory (base_url, page_url, goal, code, summary, tags, success, created_at, embedding)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         base_url,
         page_url,
@@ -43,7 +44,8 @@ def save_step_memory(base_url, page_url, goal, code, summary, tags, success):
         summary,
         ",".join(tags) if isinstance(tags, list) else tags,
         int(success),
-        datetime.utcnow().isoformat()
+        datetime.utcnow().isoformat(),
+        embedding
     ))
     conn.commit()
     conn.close()
