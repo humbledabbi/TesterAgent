@@ -1,9 +1,13 @@
+from Semantic_Migration import embed_text
 from locator_extractor_1 import extract_locators_for_url, extract_dom_metadata
 from ai_test_generator_1 import ask_ai_to_generate_test
 from test_executor_1 import run_ai_code_safely
 from selenium import webdriver
 from urllib.parse import urlparse
 from memory_db_1 import init_db, save_step_memory, get_cached_success
+from semantic_search_1 import find_semantic_match
+from Semantic_Migration import embed_text
+import json
 import time
 
 def run_agentic_test(start_url, username, password, user_prompt=None,
@@ -46,29 +50,39 @@ def run_agentic_test(start_url, username, password, user_prompt=None,
 
         cached = get_cached_success(base_url, driver.current_url, next_required_step)
 
-        if cached:
-            print("⚡ Using cached successful code (skipping LLM)")
-            code = cached["code"]
+        semantic = None
+        if not cached:
+            semantic = find_semantic_match(
+                step_text=next_required_step,
+                page_url=driver.current_url
+            )
+
+        if cached or semantic:
+            source = "cache" if cached else "semantic"
+            record = cached if cached else semantic
+
+            print(f"⚡ Using {source} match (score={record.get('score', 'exact')})")
+            code = record["code"]
 
             success = run_ai_code_safely(driver, code)
-            driver.save_screenshot(f"cached_{agent_steps_taken + 1}.png")
+            driver.save_screenshot(f"{source}_{agent_steps_taken + 1}.png")
 
             if success:
-                print("🎯 Cached code succeeded → advancing")
+                print(f"🎯 {source.capitalize()} code succeeded → advancing")
                 history.append({
                     "step": current_step_index + 1,
                     "goal": next_required_step,
                     "url": driver.current_url,
-                    "success": True
+                    "success": True,
+                    "source": source
                 })
                 current_step_index += 1
                 agent_steps_taken += 1
                 time.sleep(2)
                 tag_dict = extract_dom_metadata(driver.page_source)
-                continue  # ⬅ SKIP LLM
+                continue
             else:
-                print("❌ Cached code failed → falling back to LLM")
-                # (optional later: delete failed memory)
+                print(f"❌ {source.capitalize()} code failed → falling back to LLM")
 
         # Call AI
         ai_plan = ask_ai_to_generate_test(
@@ -108,7 +122,8 @@ def run_agentic_test(start_url, username, password, user_prompt=None,
             tag_ids = [t.get("id") for t in tag_dict.get("inputs", []) if t.get("id")]
             if goal in ["no_action", "parse_error"]:
                 print("🚫 NOT saving invalid step to DB")
-            else:
+            elif success:
+                embedding = embed_text(goal)
                 save_step_memory(
                     base_url=base_url,
                     page_url=driver.current_url,
@@ -116,9 +131,12 @@ def run_agentic_test(start_url, username, password, user_prompt=None,
                     code=code,
                     summary=goal[:120] + "..." if len(goal) > 120 else goal,
                     tags=tag_ids,
-                    success=success
+                    success=success,
+                    embedding=json.dumps(embedding)
                 )
-                print(f"💾 Step recording saved ({'✅' if success else '❌'})")
+                print(f"💾 Step recording saved (✅)" )
+            else:
+                print("❌ Step failed → not saving to semantic memory")
         except Exception as db_err:
             print(f"⚠️ DB save error: {db_err}")
 
